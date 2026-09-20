@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Frame — Movie catalog</title>
+  <link rel="stylesheet" href="/movies.css">
+  <script src="/movies.js" defer></script>
+</head>
+<body>
+  <header><a class="brand" href="/" aria-label="Frame home"><span class="brand-icon">F</span> frame<span class="dot">.</span></a><span class="nav-label">THE MOVIE COLLECTION</span><span class="ticket">YOUR NEXT BIG SCREEN MOMENT</span></header>
+  <main>
+    <section class="hero">
+      <div class="hero-copy"><p class="eyebrow"><span></span> A LITTLE ESCAPE. A GREAT STORY.</p><h1>Good stories.<br><em>Big screen.</em></h1><p class="intro">Discover the movies in our collection.<br>Your next movie night starts here.</p><a class="explore" href="#collection">Explore movies <span aria-hidden="true">↘</span></a></div>
+      <div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="frame-art"><span>THE ART OF</span><strong>getting<br>lost in<br>a story.</strong><div class="art-bottom">FRAME / CINEMA CLUB <span>✳</span></div></div><span class="art-caption">A SEAT. A SCREEN. A DIFFERENT WORLD.</span></div>
+    </section>
+    <section id="collection" class="collection" aria-labelledby="collection-heading">
+      <div class="collection-top"><div><p class="eyebrow">FIND YOUR NEXT WATCH</p><h2 id="collection-heading">The collection <span id="count">—</span></h2></div><label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search movies…" aria-label="Search movies by title" disabled></label></div>
+      <p id="status" role="status" aria-live="polite">Loading the collection…</p><button id="retry" hidden>Try again</button>
+      <div id="movies" class="movie-grid"></div>
+    </section>
+  </main>
+  <footer><a class="brand" href="/">frame<span class="dot">.</span></a><p>Made for the love of movies.</p><span>LIGHTS DOWN. WORLD OFF.</span></footer>
+  <template id="movie-template"><article class="movie-card"><div class="poster"><span class="poster-label">THE FRAME COLLECTION</span><div class="poster-shape" aria-hidden="true"></div><h3></h3><span class="poster-bottom">A STORY WORTH DISCOVERING <span aria-hidden="true">✳</span></span></div><div class="movie-info"><h3></h3><span>IN OUR COLLECTION</span></div></article></template>
+</body>
+</html>

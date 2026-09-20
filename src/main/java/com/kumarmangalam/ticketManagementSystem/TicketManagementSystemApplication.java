@@ -3,6 +3,8 @@ package com.kumarmangalam.ticketManagementSystem;
 import java.time.LocalDateTime;
 
 import org.springframework.boot.SpringApplication;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.context.annotation.Bean;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 import com.kumarmangalam.ticketManagementSystem.model.*;
@@ -15,14 +17,26 @@ public class TicketManagementSystemApplication {
 
 	public static void main(String[] args) {
 		SpringApplication.run(TicketManagementSystemApplication.class, args);
+	}
 
-		MovieRepository movieRepository = new MovieRepository();
+    @Bean
+    MovieRepository movieRepository() {
+        return new MovieRepository();
+    }
+
+    @Bean
+    MovieService movieService(MovieRepository repository) {
+        return new MovieService(repository);
+    }
+
+    @Bean
+    CommandLineRunner demoData(MovieRepository movieRepository, MovieService movieService) {
+        return args -> {
 		ShowRepository showRepository = new ShowRepository();
 		ThreaterRepository threaterRepository = new ThreaterRepository();
 		ScreenRepository screenRepository = new ScreenRepository();
 		BookingRepository bookingRepository = new BookingRepository();
 
-		MovieService movieService = new MovieService(movieRepository);
 		ThreaterService threaterService = new ThreaterService(threaterRepository, screenRepository);
 		ShowService showService = new ShowService(showRepository, screenRepository, movieRepository);
 		BookingService bookingService = new BookingService(bookingRepository, showRepository, screenRepository);
@@ -47,6 +61,6 @@ public class TicketManagementSystemApplication {
 		Booking confirmed = bookingService.confirmBooking(booking.getBookingId(), "demo-payment-001");
         System.out.println("Booking confirmed: " + confirmed);
 		}
-		
+        };
 	}
 }
