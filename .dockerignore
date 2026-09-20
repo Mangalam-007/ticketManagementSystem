@@ -1,0 +1,10 @@
+.git
+.idea
+.vscode
+.codex
+.agents
+target
+*.log
+.DS_Store
+.env
+.env.*

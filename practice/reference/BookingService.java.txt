@@ -1,0 +1,159 @@
+package com.kumarmangalam.ticketManagementSystem.service;
+
+import com.kumarmangalam.ticketManagementSystem.model.*;
+import com.kumarmangalam.ticketManagementSystem.repository.BookingRepository;
+import com.kumarmangalam.ticketManagementSystem.repository.ShowRepository;
+import com.kumarmangalam.ticketManagementSystem.repository.ScreenRepository;
+import java.time.*;
+import java.util.*;
+import java.util.stream.IntStream;
+
+public class BookingService {
+    private final BookingRepository bookings;
+    private final ShowRepository shows;
+    private final ScreenRepository screens;
+    private final Clock clock;
+    private final Duration holdDuration;
+
+    public BookingService(BookingRepository bookings, ShowRepository shows, ScreenRepository screens) {
+        this(bookings, shows, screens, Clock.systemDefaultZone(), Duration.ofMinutes(5));
+    }
+
+    public BookingService(BookingRepository bookings, ShowRepository shows, ScreenRepository screens,
+                          Clock clock, Duration holdDuration) {
+        this.bookings = Objects.requireNonNull(bookings);
+        this.shows = Objects.requireNonNull(shows);
+        this.screens = Objects.requireNonNull(screens);
+        this.clock = Objects.requireNonNull(clock);
+        this.holdDuration = Objects.requireNonNull(holdDuration);
+        if (holdDuration.isZero() || holdDuration.isNegative()) {
+            throw new IllegalArgumentException("Hold duration must be positive");
+        }
+    }
+
+    public List<Seat> getAvailableSeats(String showId) {
+        synchronized (bookings) {
+            expireHolds();
+            Show show = upcomingShow(showId);
+            Set<Integer> occupied = occupiedSeats(showId);
+            return IntStream.rangeClosed(1, capacity(show))
+                    .filter(number -> !occupied.contains(number))
+                    .mapToObj(number -> new Seat(show.getScreenId(), number)).toList();
+        }
+    }
+
+    public Booking createBooking(String userId, String showId, List<Integer> seatNumbers) {
+        if (userId == null || userId.isBlank()) throw new IllegalArgumentException("User is required");
+        if (seatNumbers == null || seatNumbers.isEmpty()) {
+            throw new IllegalArgumentException("Select at least one seat");
+        }
+        List<Integer> requested = new ArrayList<>(seatNumbers);
+        synchronized (bookings) {
+            expireHolds();
+            Show show = upcomingShow(showId);
+            int capacity = capacity(show);
+            if (requested.stream().anyMatch(n -> n == null || n < 1 || n > capacity)
+                    || new HashSet<>(requested).size() != requested.size()) {
+                throw new IllegalArgumentException("Seat numbers must be valid and unique");
+            }
+            Set<Integer> occupied = occupiedSeats(showId);
+            if (requested.stream().anyMatch(occupied::contains)) {
+                throw new IllegalStateException("One or more seats are already held or booked");
+            }
+            Instant now = clock.instant();
+            Instant showStart = show.getStartTime().atZone(clock.getZone()).toInstant();
+            Instant expiry = now.plus(holdDuration);
+            if (expiry.isAfter(showStart)) expiry = showStart;
+            Booking booking = new Booking(UUID.randomUUID().toString(), userId, showId,
+                    requested.stream().map(n -> new Seat(show.getScreenId(), n)).toList(),
+                    BookingStatus.PENDING_PAYMENT, now, expiry, null);
+            bookings.save(booking);
+            return booking;
+        }
+    }
+
+    /** Call only after trusted payment verification; this method does not charge money. */
+    public Booking confirmBooking(String bookingId, String paymentReference) {
+        if (paymentReference == null || paymentReference.isBlank()) {
+            throw new IllegalArgumentException("Verified payment reference is required");
+        }
+        synchronized (bookings) {
+            expireHolds();
+            Booking booking = bookings.findById(bookingId);
+            if (booking.getStatus() == BookingStatus.CONFIRMED
+                    && paymentReference.equals(booking.getPaymentReference())) return booking;
+            if (booking.getStatus() != BookingStatus.PENDING_PAYMENT) {
+                throw new IllegalStateException("Only an active hold can be confirmed");
+            }
+            upcomingShow(booking.getShowId());
+            if (bookings.findAll().stream().anyMatch(b -> paymentReference.equals(b.getPaymentReference()))) {
+                throw new IllegalStateException("Payment reference already used");
+            }
+            Booking confirmed = booking.withStatus(BookingStatus.CONFIRMED, paymentReference);
+            bookings.save(confirmed);
+            return confirmed;
+        }
+    }
+
+    /** Releases unpaid holds, including after payment failure. Refunds are a separate future flow. */
+    public Booking cancelBooking(String bookingId) {
+        synchronized (bookings) {
+            expireHolds();
+            Booking booking = bookings.findById(bookingId);
+            if (booking.getStatus() == BookingStatus.CANCELLED || booking.getStatus() == BookingStatus.EXPIRED) {
+                return booking;
+            }
+            if (booking.getStatus() == BookingStatus.CONFIRMED) {
+                throw new IllegalStateException("Confirmed bookings require a refund flow");
+            }
+            Booking cancelled = booking.withStatus(BookingStatus.CANCELLED, null);
+            bookings.save(cancelled);
+            return cancelled;
+        }
+    }
+
+    public Booking getBooking(String bookingId) {
+        synchronized (bookings) {
+            expireHolds();
+            return bookings.findById(bookingId);
+        }
+    }
+
+    // Lazy expiry runs before every read or mutation; no background thread is required.
+    private void expireHolds() {
+        Instant now = clock.instant();
+        for (Booking booking : bookings.findAll()) {
+            if (booking.getStatus() == BookingStatus.PENDING_PAYMENT && !now.isBefore(booking.getExpiresAt())) {
+                bookings.save(booking.withStatus(BookingStatus.EXPIRED, null));
+            }
+        }
+    }
+
+    private Set<Integer> occupiedSeats(String showId) {
+        Set<Integer> occupied = new HashSet<>();
+        for (Booking booking : bookings.findAll()) {
+            if (booking.getShowId().equals(showId) && (booking.getStatus() == BookingStatus.PENDING_PAYMENT
+                    || booking.getStatus() == BookingStatus.CONFIRMED)) {
+                booking.getSeats().forEach(seat -> occupied.add(seat.getNumber()));
+            }
+        }
+        return occupied;
+    }
+
+    private Show upcomingShow(String showId) {
+        Show show = shows.findAll().stream().filter(s -> s.getShowId().equals(showId)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Show not found: " + showId));
+        if (!show.getStartTime().isAfter(LocalDateTime.now(clock))) {
+            throw new IllegalStateException("Booking is closed for this show");
+        }
+        return show;
+    }
+
+    private int capacity(Show show) {
+        Integer capacity = screens.findById(show.getScreenId()).getSeatingCapacity();
+        if (capacity == null || capacity <= 0) {
+            throw new IllegalStateException("Configure a positive screen seating capacity first");
+        }
+        return capacity;
+    }
+}
